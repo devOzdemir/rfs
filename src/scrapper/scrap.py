@@ -1,0 +1,62 @@
+import os
+import logging
+from hepsiburada import get_product_links, scrape_all_details
+from datetime import datetime
+
+# Log ayarları
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler()],
+)
+
+# Kaydetme dizinleri
+LINK_DIR = "../../data/link"
+RAW_DIR = "../../data/raw"
+PROCESSED_DIR = "../../data/processed"
+
+# URL ve sayfa bilgileri
+BASE_URL = "https://www.hepsiburada.com/laptop-notebook-dizustu-bilgisayarlar-c-98?puan=3-max&sayfa="
+TOTAL_PAGES = 1  # İsteğe göre artırılabilir
+
+
+def scrape_hepsiburada():
+    logging.info("🔍 Ürün listesi çekiliyor...")
+
+    timestamp = datetime.now().strftime("%Y%m%d%H%M")
+
+    try:
+        links_df = get_product_links(BASE_URL, TOTAL_PAGES)
+        os.makedirs(LINK_DIR, exist_ok=True)
+        raw_path = os.path.join(LINK_DIR, f"hepsiburada_links_{timestamp}.xlsx")
+        links_df.to_excel(raw_path, index=False)
+        logging.info(
+            f"✅ Ürün bağlantıları {raw_path} dosyasına kaydedildi. Toplam: {len(links_df)} ürün"
+        )
+
+    except Exception as e:
+        logging.error(f"❌ Ürün linkleri alınırken hata oluştu: {e}")
+        return
+
+    logging.info("🔎 Ürün detayları çekiliyor...")
+
+    try:
+        detailed_df = scrape_all_details(links_df)
+        os.makedirs(RAW_DIR, exist_ok=True)
+        processed_path = os.path.join(RAW_DIR, f"hepsiburada_details_{timestamp}.xlsx")
+        detailed_df.to_excel(processed_path, index=False)
+        logging.info(
+            f"✅ Ürün detayları {processed_path} dosyasına kaydedildi. Toplam: {len(detailed_df)} ürün"
+        )
+
+    except Exception as e:
+        logging.error(f"❌ Ürün detayları alınırken hata oluştu: {e}")
+
+
+def main():
+    scrape_hepsiburada()
+    # scrape_trendyol()  # ileride eklenecek
+
+
+if __name__ == "__main__":
+    main()
