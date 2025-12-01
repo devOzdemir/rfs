@@ -4,11 +4,16 @@ import time
 from datetime import datetime
 import os
 import logging
+from selenium import webdriver
+
+LINK_DIR = "../../data/link"
+RAW_DIR = "../../data/raw"
+PROCESSED_DIR = "../../data/processed"
 
 LOG_DIR = "logs"
 os.makedirs(LOG_DIR, exist_ok=True)
 timestamp = datetime.now().strftime("%Y%m%d%H%M")
-log_file = os.path.join(LOG_DIR, f"scraper_{timestamp}.log")
+log_file = os.path.join(LOG_DIR, f"HB_Scraper_{timestamp}.log")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,7 +90,7 @@ def get_product_details(link: str, driver) -> dict:
 
     try:
         driver.get(link)
-        time.sleep(1.5)
+        time.sleep(3)
 
         try:
             title_element = driver.find_element(
@@ -159,3 +164,29 @@ def scrape_all_details(links_df: pd.DataFrame, driver) -> pd.DataFrame:
 
     df_detailed = pd.DataFrame(results)
     return df_detailed
+
+
+def scrape_hepsiburada(base_url: str, total_pages: int):
+    os.makedirs(LINK_DIR, exist_ok=True)
+    os.makedirs(RAW_DIR, exist_ok=True)
+    os.makedirs(PROCESSED_DIR, exist_ok=True)
+
+    driver = webdriver.Chrome()
+
+    try:
+        links_df = get_product_links(base_url, total_pages, driver)
+        link_path = os.path.join(
+            LINK_DIR, f"HB_Links_{datetime.now().strftime('%Y%m%d%H%M')}.csv"
+        )
+        links_df.to_csv(link_path, index=False)
+        logging.info(f"Linkler kaydedildi: {link_path}")
+
+        details_df = scrape_all_details(links_df, driver)
+        raw_path = os.path.join(
+            RAW_DIR, f"HB_Details_{datetime.now().strftime('%Y%m%d%H%M')}.csv"
+        )
+        details_df.to_csv(raw_path, index=False)
+        logging.info(f"Detaylar kaydedildi: {raw_path}")
+
+    finally:
+        driver.quit()
