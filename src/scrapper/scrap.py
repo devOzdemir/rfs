@@ -4,11 +4,19 @@ from hepsiburada import get_product_links, scrape_all_details
 from datetime import datetime
 from selenium import webdriver
 
+LOG_DIR = "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+timestamp = datetime.now().strftime("%Y%m%d%H%M")
+log_file = os.path.join(LOG_DIR, f"scraper_{timestamp}.log")
+
 # Log ayarları
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler()],
+    handlers=[
+        logging.StreamHandler(),  # Terminale log
+        logging.FileHandler(log_file, encoding="utf-8"),  # Dosyaya log
+    ],
 )
 
 # Kaydetme dizinleri
@@ -18,13 +26,11 @@ PROCESSED_DIR = "../../data/processed"
 
 # URL ve sayfa bilgileri
 BASE_URL = "https://www.hepsiburada.com/laptop-notebook-dizustu-bilgisayarlar-c-98?puan=3-max&sayfa="
-TOTAL_PAGES = 50  # İsteğe göre artırılabilir
+TOTAL_PAGES = 1  # İsteğe göre artırılabilir test icin 1 olarak bırakıldı, max 49 olabilir hepsiburada için
 
 
 def scrape_hepsiburada():
     logging.info("🔍 Ürün listesi çekiliyor...")
-
-    timestamp = datetime.now().strftime("%Y%m%d%H%M")
 
     driver = webdriver.Chrome()
 

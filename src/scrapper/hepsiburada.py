@@ -2,6 +2,22 @@ from selenium.webdriver.common.by import By
 import pandas as pd
 import time
 from datetime import datetime
+import os
+import logging
+
+LOG_DIR = "logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+timestamp = datetime.now().strftime("%Y%m%d%H%M")
+log_file = os.path.join(LOG_DIR, f"scraper_{timestamp}.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(),  # Terminale log
+        logging.FileHandler(log_file, encoding="utf-8"),  # Dosyaya log
+    ],
+)
 
 
 def get_product_links(base_url: str, total_pages: int = 1, driver=None) -> pd.DataFrame:
@@ -11,7 +27,7 @@ def get_product_links(base_url: str, total_pages: int = 1, driver=None) -> pd.Da
     all_results = []
 
     for page in range(1, total_pages + 1):
-        print(f"[INFO] Processing page {page}...")
+        logging.info(f"Processing page {page}...")
         driver.get(base_url + str(page))
         time.sleep(3)
 
@@ -83,7 +99,7 @@ def get_product_details(link: str, driver) -> dict:
             features["Marka"] = brand_element.get_attribute("title").strip()
 
         except Exception as e:
-            print(f"[WARN] Başlık veya marka bilgisi alınamadı: {link} - {e}")
+            logging.warning(f"Başlık veya marka bilgisi alınamadı: {link} - {e}")
 
         try:
             tech_specs = driver.find_element(By.ID, "techSpecs")
@@ -114,10 +130,10 @@ def get_product_details(link: str, driver) -> dict:
                     continue
 
         except Exception as e:
-            print(f"[WARN] Teknik özellikler tablosu bulunamadı: {link} - {e}")
+            logging.warning(f"Teknik özellikler tablosu bulunamadı: {link} - {e}")
 
     except Exception as e:
-        print(f"[ERROR] Ürün detayları alınamadı: {e}")
+        logging.error(f"Ürün detayları alınamadı: {e}")
 
     features["Çekilme Zamanı"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return features
@@ -133,7 +149,7 @@ def scrape_all_details(links_df: pd.DataFrame, driver) -> pd.DataFrame:
         zip(links_df["Link"], links_df["Price"]), start=1
     ):
         if i % 50 == 0 or i == 1:
-            print(f"[INFO] {i}. ürün işleniyor: {link}")
+            logging.info(f"{i}. ürün işleniyor: {link}")
 
         details = get_product_details(link, driver)
         details["Fiyat (TRY)"] = price
