@@ -1,10 +1,10 @@
-from selenium.webdriver.common.by import By
-import pandas as pd
-import time
-from datetime import datetime
 import os
+import time
 import logging
+import pandas as pd
+from datetime import datetime
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 
 LINK_DIR = "../../data/link"
 RAW_DIR = "../../data/raw"
