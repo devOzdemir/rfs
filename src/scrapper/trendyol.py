@@ -25,48 +25,51 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 timestamp = datetime.now().strftime("%Y%m%d%H%M")
 log_file = LOG_DIR / f"TY_Scraper_{timestamp}.log"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(str(log_file), encoding="utf-8"),
-    ],
-    force=True,  # reconfigure even if another module already configured logging
-)
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+
+# Dedicated logger to avoid clashing with Hepsiburada (or other modules) in the same process.
+logger = logging.getLogger("scrapper.trendyol")
+logger.setLevel(logging.INFO)
+
+if not logger.handlers:
+    formatter = logging.Formatter(LOG_FORMAT)
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    file_handler = logging.FileHandler(str(log_file), encoding="utf-8")
+    file_handler.setFormatter(formatter)
+
+    logger.addHandler(stream_handler)
+    logger.addHandler(file_handler)
+
+# Prevent logs from bubbling up to the root logger (which may have other handlers)
+logger.propagate = False
 
 TARGET_FIELDS = [
     # Üst Bilgiler
     "Başlık",
     "Marka",
-    "Ürün Modeli",
     # İşlemci Bilgileri
     "İşlemci Tipi",
-    "İşlemci",
     "İşlemci Modeli",
     "İşlemci Nesli",
-    "İşlemci Cache",
     "İşlemci Çekirdek Sayısı",
     "Temel İşlemci Hızı (GHz)",
     "Maksimum İşlemci Hızı (GHz)",
     # RAM / Bellek Bilgileri
     "Ram (Sistem Belleği)",
-    "Ram Tipi",
     "Ram (Sistem Belleği) Tipi",
-    "Bellek Hızı",
     "Arttırılabilir Azami Bellek",
     # Depolama
     "SSD Kapasitesi",
     "Hard Disk Kapasitesi",
-    "Optik Sürücü Tipi",
     # Ekran Bilgileri
     "Ekran Boyutu",
     "Çözünürlük",
     "Çözünürlük Standartı",
-    "Max Ekran Çözünürlüğü",
     "Ekran Yenileme Hızı",
     "Panel Tipi",
-    "Dokunmatik Ekran",
     # Ekran Kartı Bilgileri
     "Ekran Kartı",
     "Ekran Kartı Tipi",
@@ -74,20 +77,14 @@ TARGET_FIELDS = [
     "Ekran Kartı Bellek Tipi",
     "Ekran Kartı Gücü",
     # Diğer Donanım Özellikleri
-    "Klavye",
     "Cihaz Ağırlığı",
     "Kullanım Amacı",
-    "Bağlantılar",
     "Şarjlı Kullanım Süresi",
-    "Suya/Toza Dayanıklılık",
-    "Hızlı Şarj",
-    "Parmak İzi Okuyucu",
     # Yazılım ve Diğer Bilgiler
     "İşletim Sistemi",
     "Garanti Tipi",
     "Garanti Süresi",
     "Menşei",
-    "Tamir Edilebilirlik",
     "Renk",
     # Meta
     "Çekilme Zamanı",
@@ -146,12 +143,12 @@ def expand_product_attributes(driver, timeout: int = 10) -> None:
 
             wait.until(_expanded)
         except Exception as e:
-            logging.warning(
+            logger.warning(
                 f"Ürün özellikleri için 'Daha Fazla Göster' tıklanamadı: {e}"
             )
 
     except TimeoutException:
-        logging.warning(
+        logger.warning(
             "Ürün özellikleri kapsayıcı alanı bulunamadı; 'Daha Fazla Göster' tıklanamadı."
         )
 
@@ -161,7 +158,7 @@ def get_product_links_trendyol(base_url: str, total_pages: int, driver):
 
     for page in range(1, total_pages + 1):
         url = f"{base_url}&pi={page}"
-        logging.info(f"Sayfa {page} işleniyor: {url}")
+        logger.info(f"Sayfa {page} işleniyor: {url}")
 
         try:
             driver.get(url)
@@ -171,7 +168,7 @@ def get_product_links_trendyol(base_url: str, total_pages: int, driver):
             )
 
             product_cards = driver.find_elements(By.CSS_SELECTOR, "a.product-card")
-            logging.info(f"{len(product_cards)} ürün bulundu.")
+            logger.info(f"{len(product_cards)} ürün bulundu.")
 
             for card in product_cards:
                 try:
@@ -197,10 +194,10 @@ def get_product_links_trendyol(base_url: str, total_pages: int, driver):
                         }
                     )
                 except Exception as e:
-                    logging.warning(f"Ürün işlenirken hata: {e}")
+                    logger.warning(f"Ürün işlenirken hata: {e}")
 
         except Exception as e:
-            logging.error(f"Sayfa işlenemedi: {e}")
+            logger.error(f"Sayfa işlenemedi: {e}")
             continue
 
     df = pd.DataFrame(all_data)
@@ -225,7 +222,7 @@ def get_product_details_trendyol(link: str, driver) -> dict:
             features["Marka"] = brand
             features["Başlık"] = title
         except Exception as e:
-            logging.warning(f"Başlık veya marka alınamadı: {e}")
+            logger.warning(f"Başlık veya marka alınamadı: {e}")
 
         # Ürün Özellikleri: önce doğru kapsayıcıyı genişlet
         expand_product_attributes(driver)
@@ -264,10 +261,10 @@ def get_product_details_trendyol(link: str, driver) -> dict:
                     continue
 
         except Exception as e:
-            logging.warning(f"Özellikler okunamadı: {e}")
+            logger.warning(f"Özellikler okunamadı: {e}")
 
     except Exception as e:
-        logging.error(f"Ürün detayları alınamadı: {e}")
+        logger.error(f"Ürün detayları alınamadı: {e}")
 
     features["Çekilme Zamanı"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return features
@@ -280,7 +277,7 @@ def scrape_all_details_trendyol(links_df: pd.DataFrame, driver) -> pd.DataFrame:
         zip(links_df["Link"], links_df["Price"]), start=1
     ):
         if i % 50 == 0 or i == 1:
-            logging.info(f"{i}. ürün işleniyor: {link}")
+            logger.info(f"{i}. ürün işleniyor: {link}")
 
         details = get_product_details_trendyol(link, driver)
         details["Fiyat (TRY)"] = price
@@ -304,14 +301,14 @@ def scrape_trendyol(base_url: str, total_pages: int):
             LINK_DIR, f"TY_Links_{datetime.now().strftime('%Y%m%d%H%M')}.csv"
         )
         links_df.to_csv(link_path, index=False)
-        logging.info(f"Linkler kaydedildi: {link_path}")
+        logger.info(f"Linkler kaydedildi: {link_path}")
 
         details_df = scrape_all_details_trendyol(links_df, driver)
         raw_path = os.path.join(
             RAW_DIR, f"TY_Details_{datetime.now().strftime('%Y%m%d%H%M')}.csv"
         )
         details_df.to_csv(raw_path, index=False)
-        logging.info(f"Detaylar kaydedildi: {raw_path}")
+        logger.info(f"Detaylar kaydedildi: {raw_path}")
 
     finally:
         driver.quit()
