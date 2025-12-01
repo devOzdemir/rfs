@@ -2,6 +2,7 @@ import os
 import logging
 from hepsiburada import get_product_links, scrape_all_details
 from datetime import datetime
+from selenium import webdriver
 
 # Log ayarları
 logging.basicConfig(
@@ -17,7 +18,7 @@ PROCESSED_DIR = "../../data/processed"
 
 # URL ve sayfa bilgileri
 BASE_URL = "https://www.hepsiburada.com/laptop-notebook-dizustu-bilgisayarlar-c-98?puan=3-max&sayfa="
-TOTAL_PAGES = 1  # İsteğe göre artırılabilir
+TOTAL_PAGES = 50  # İsteğe göre artırılabilir
 
 
 def scrape_hepsiburada():
@@ -25,8 +26,10 @@ def scrape_hepsiburada():
 
     timestamp = datetime.now().strftime("%Y%m%d%H%M")
 
+    driver = webdriver.Chrome()
+
     try:
-        links_df = get_product_links(BASE_URL, TOTAL_PAGES)
+        links_df = get_product_links(BASE_URL, TOTAL_PAGES, driver)
         os.makedirs(LINK_DIR, exist_ok=True)
         raw_path = os.path.join(LINK_DIR, f"hepsiburada_links_{timestamp}.xlsx")
         links_df.to_excel(raw_path, index=False)
@@ -36,12 +39,13 @@ def scrape_hepsiburada():
 
     except Exception as e:
         logging.error(f"❌ Ürün linkleri alınırken hata oluştu: {e}")
+        driver.quit()
         return
 
     logging.info("🔎 Ürün detayları çekiliyor...")
 
     try:
-        detailed_df = scrape_all_details(links_df)
+        detailed_df = scrape_all_details(links_df, driver)
         os.makedirs(RAW_DIR, exist_ok=True)
         processed_path = os.path.join(RAW_DIR, f"hepsiburada_details_{timestamp}.xlsx")
         detailed_df.to_excel(processed_path, index=False)
@@ -51,6 +55,9 @@ def scrape_hepsiburada():
 
     except Exception as e:
         logging.error(f"❌ Ürün detayları alınırken hata oluştu: {e}")
+
+    driver.quit()
+    print("✅ Hepsiburada scraping işlemi tamamlandı.")
 
 
 def main():

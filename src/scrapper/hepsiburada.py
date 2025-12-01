@@ -1,22 +1,13 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 import time
 from datetime import datetime
 
 
-def get_product_links(base_url: str, total_pages: int = 1) -> pd.DataFrame:
+def get_product_links(base_url: str, total_pages: int = 1, driver=None) -> pd.DataFrame:
     """
     Hepsiburada'dan ürün başlıklarını, fiyatlarını ve linklerini çeker.
     """
-    options = webdriver.ChromeOptions()
-    # options.add_argument("--headless")  # İsteğe bağlı: tarayıcıyı arka planda çalıştırmak için
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), options=options
-    )
-
     all_results = []
 
     for page in range(1, total_pages + 1):
@@ -41,12 +32,11 @@ def get_product_links(base_url: str, total_pages: int = 1) -> pd.DataFrame:
             except Exception:
                 continue
 
-    driver.quit()
     df = pd.DataFrame(all_results)
     return df
 
 
-def get_product_details(link: str) -> dict:
+def get_product_details(link: str, driver) -> dict:
     """
     Tek bir ürünün detay özelliklerini çeker.
     """
@@ -75,17 +65,11 @@ def get_product_details(link: str) -> dict:
         "İşletim Sistemi",
     ]
 
-    options = webdriver.ChromeOptions()
-    # options.add_argument("--headless")  # Sessiz modda çalış
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()), options=options
-    )
-
     features = {field: None for field in target_fields}
 
     try:
         driver.get(link)
-        time.sleep(3)
+        time.sleep(1.5)
 
         try:
             title_element = driver.find_element(
@@ -135,14 +119,11 @@ def get_product_details(link: str) -> dict:
     except Exception as e:
         print(f"[ERROR] Ürün detayları alınamadı: {e}")
 
-    finally:
-        driver.quit()
-
     features["Çekilme Zamanı"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return features
 
 
-def scrape_all_details(links_df: pd.DataFrame) -> pd.DataFrame:
+def scrape_all_details(links_df: pd.DataFrame, driver) -> pd.DataFrame:
     """
     Ürün linkleri DataFrame'inden tüm ürün detaylarını döndüren DataFrame'i oluşturur.
     """
@@ -154,7 +135,7 @@ def scrape_all_details(links_df: pd.DataFrame) -> pd.DataFrame:
         if i % 50 == 0 or i == 1:
             print(f"[INFO] {i}. ürün işleniyor: {link}")
 
-        details = get_product_details(link)
+        details = get_product_details(link, driver)
         details["Fiyat (TRY)"] = price
         details["Link"] = link
         details["Çekilme Zamanı"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
