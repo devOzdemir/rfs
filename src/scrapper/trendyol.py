@@ -1,27 +1,38 @@
 import os
-import time
 import logging
+from pathlib import Path
 import pandas as pd
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import (
+    TimeoutException,
+    ElementClickInterceptedException,
+    StaleElementReferenceException,
+)
 
 LINK_DIR = "../../data/link"
 RAW_DIR = "../../data/raw"
 PROCESSED_DIR = "../../data/processed"
 
-LOG_DIR = "logs"
-os.makedirs(LOG_DIR, exist_ok=True)
+# Use an absolute log folder so logs don't end up in an unexpected CWD
+BASE_DIR = Path(__file__).resolve().parent
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 timestamp = datetime.now().strftime("%Y%m%d%H%M")
-log_file = os.path.join(LOG_DIR, f"TY_Scraper_{timestamp}.log")
+log_file = LOG_DIR / f"TY_Scraper_{timestamp}.log"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(log_file, encoding="utf-8"),
+        logging.FileHandler(str(log_file), encoding="utf-8"),
     ],
+    force=True,  # reconfigure even if another module already configured logging
 )
 
 TARGET_FIELDS = [
@@ -83,6 +94,68 @@ TARGET_FIELDS = [
 ]
 
 
+def expand_product_attributes(driver, timeout: int = 10) -> None:
+    """Clicks the correct 'Daha Fazla Göster' inside the product attributes container (if present)."""
+    wait = WebDriverWait(driver, timeout)
+
+    # Scope clicks to the attributes root to avoid other 'show more' buttons on the page
+    root_selector = (
+        "div.product-attributes-container.product-attributes, "
+        "div[data-drroot='product-attributes']"
+    )
+
+    try:
+        root = wait.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, root_selector))
+        )
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", root)
+
+        # The button is usually located under `.show-more-section`
+        buttons = root.find_elements(
+            By.CSS_SELECTOR, ".show-more-section button.show-more-button"
+        )
+        if not buttons:
+            return
+
+        btn = buttons[0]
+        try:
+            driver.execute_script(
+                "arguments[0].scrollIntoView({block: 'center'});", btn
+            )
+            # Prefer native click; fallback to JS click when intercepted
+            try:
+                btn.click()
+            except (ElementClickInterceptedException, StaleElementReferenceException):
+                driver.execute_script("arguments[0].click();", btn)
+
+            # After clicking, DOM may re-render; briefly wait for either:
+            # - the button to disappear, or
+            # - more attribute items to become available
+            def _expanded(_driver):
+                try:
+                    current_root = _driver.find_element(By.CSS_SELECTOR, root_selector)
+                    item_count = len(
+                        current_root.find_elements(
+                            By.CSS_SELECTOR, "div.attributes div.attribute-item"
+                        )
+                    )
+                    # heuristic: expanded pages often have more than 12 items
+                    return item_count > 12
+                except Exception:
+                    return True
+
+            wait.until(_expanded)
+        except Exception as e:
+            logging.warning(
+                f"Ürün özellikleri için 'Daha Fazla Göster' tıklanamadı: {e}"
+            )
+
+    except TimeoutException:
+        logging.warning(
+            "Ürün özellikleri kapsayıcı alanı bulunamadı; 'Daha Fazla Göster' tıklanamadı."
+        )
+
+
 def get_product_links_trendyol(base_url: str, total_pages: int, driver):
     all_data = []
 
@@ -92,7 +165,10 @@ def get_product_links_trendyol(base_url: str, total_pages: int, driver):
 
         try:
             driver.get(url)
-            time.sleep(3)
+            wait = WebDriverWait(driver, 15)
+            wait.until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a.product-card"))
+            )
 
             product_cards = driver.find_elements(By.CSS_SELECTOR, "a.product-card")
             logging.info(f"{len(product_cards)} ürün bulundu.")
@@ -133,14 +209,16 @@ def get_product_links_trendyol(base_url: str, total_pages: int, driver):
 
 def get_product_details_trendyol(link: str, driver) -> dict:
     features = {field: None for field in TARGET_FIELDS}
+    wait = WebDriverWait(driver, 15)
 
     try:
         driver.get(link)
-        time.sleep(3)
 
         # Başlık ve Marka
         try:
-            h1_elem = driver.find_element(By.CSS_SELECTOR, "h1.product-title")
+            h1_elem = wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "h1.product-title"))
+            )
             brand_elem = h1_elem.find_element(By.CSS_SELECTOR, "a strong")
             brand = brand_elem.text.strip()
             title = h1_elem.text.strip().replace(brand, "").strip()
@@ -149,20 +227,42 @@ def get_product_details_trendyol(link: str, driver) -> dict:
         except Exception as e:
             logging.warning(f"Başlık veya marka alınamadı: {e}")
 
-        # Özellikler
+        # Ürün Özellikleri: önce doğru kapsayıcıyı genişlet
+        expand_product_attributes(driver)
+
+        # Özellikler (sadece 'Ürün Özellikleri' bölümünü hedefle)
         try:
-            attr_container = driver.find_element(By.CLASS_NAME, "attributes")
-            attr_items = attr_container.find_elements(By.CLASS_NAME, "attribute-item")
+            root_selector = (
+                "div.product-attributes-container.product-attributes, "
+                "div[data-drroot='product-attributes']"
+            )
+            root = wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, root_selector))
+            )
+
+            # 'Ürün Özellikleri' başlığı olan section
+            feature_section = root.find_element(
+                By.XPATH,
+                ".//div[contains(@class,'attributes-section')][.//h3[normalize-space()='Ürün Özellikleri']]",
+            )
+            attr_items = feature_section.find_elements(
+                By.CSS_SELECTOR, "div.attributes div.attribute-item"
+            )
+
             for item in attr_items:
                 try:
-                    label_elem = item.find_element(By.CLASS_NAME, "name")
-                    value_elem = item.find_element(By.CLASS_NAME, "value")
-                    label = label_elem.text.strip()
-                    value = value_elem.text.strip()
-                    if label in features:
-                        features[label] = value
+                    label = item.find_element(By.CSS_SELECTOR, ".name").text.strip()
+                    value = item.find_element(By.CSS_SELECTOR, ".value").text.strip()
+
+                    if label in features and value:
+                        # Aynı etiket gelirse kaybetmemek için birleştir
+                        if features[label] and features[label] != value:
+                            features[label] = f"{features[label]}; {value}"
+                        else:
+                            features[label] = value
                 except Exception:
                     continue
+
         except Exception as e:
             logging.warning(f"Özellikler okunamadı: {e}")
 
