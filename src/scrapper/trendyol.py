@@ -82,9 +82,9 @@ TARGET_FIELDS = [
     "Şarjlı Kullanım Süresi",
     # Yazılım ve Diğer Bilgiler
     "İşletim Sistemi",
-    "Garanti Tipi",
-    "Garanti Süresi",
-    "Menşei",
+    # "Garanti Tipi",
+    # "Garanti Süresi",
+    # "Menşei",
     "Renk",
     # Meta
     "Çekilme Zamanı",
