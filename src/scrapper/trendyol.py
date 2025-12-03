@@ -45,47 +45,43 @@ if not logger.handlers:
 
 # Prevent logs from bubbling up to the root logger (which may have other handlers)
 logger.propagate = False
-
+# Define the target fields to extract from Trendyol product pages
 TARGET_FIELDS = [
-    # Üst Bilgiler
+    # Genel
     "Başlık",
     "Marka",
-    # İşlemci Bilgileri
+    # "Ürün Modeli", Trendyolda yok
+    "Kullanım Amacı",
+    "Renk",
+    "Cihaz Ağırlığı",
+    # İşlemci
     "İşlemci Tipi",
     "İşlemci Modeli",
     "İşlemci Nesli",
     "İşlemci Çekirdek Sayısı",
-    "Temel İşlemci Hızı (GHz)",
+    # "İşlemci Cache", Trendyolda yok
     "Maksimum İşlemci Hızı (GHz)",
-    # RAM / Bellek Bilgileri
+    # Bellek / RAM
     "Ram (Sistem Belleği)",
     "Ram (Sistem Belleği) Tipi",
-    "Arttırılabilir Azami Bellek",
+    # "Bellek Hızı", Trendyolda yok
+    # Grafik / GPU
+    "Ekran Kartı",
+    "Ekran Kartı Tipi",
+    # "Ekran Kartı İşlemcisi", Trendyolda yok gerek de yok
+    "Ekran Kartı Hafızası",
+    "Ekran Kartı Bellek Tipi",
     # Depolama
     "SSD Kapasitesi",
     "Hard Disk Kapasitesi",
-    # Ekran Bilgileri
+    # Ekran
     "Ekran Boyutu",
     "Çözünürlük",
     "Çözünürlük Standartı",
     "Ekran Yenileme Hızı",
     "Panel Tipi",
-    # Ekran Kartı Bilgileri
-    "Ekran Kartı",
-    "Ekran Kartı Tipi",
-    "Ekran Kartı Hafızası",
-    "Ekran Kartı Bellek Tipi",
-    "Ekran Kartı Gücü",
-    # Diğer Donanım Özellikleri
-    "Cihaz Ağırlığı",
-    "Kullanım Amacı",
-    "Şarjlı Kullanım Süresi",
-    # Yazılım ve Diğer Bilgiler
+    # Yazılım
     "İşletim Sistemi",
-    # "Garanti Tipi",
-    # "Garanti Süresi",
-    # "Menşei",
-    "Renk",
     # Meta
     "Çekilme Zamanı",
 ]

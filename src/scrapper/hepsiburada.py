@@ -1,11 +1,14 @@
 import os
-import time
 import logging
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoSuchElementException
+
 
 LINK_DIR = "../../data/link"
 RAW_DIR = "../../data/raw"
@@ -18,7 +21,6 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 timestamp = datetime.now().strftime("%Y%m%d%H%M")
 log_file = LOG_DIR / f"HB_Scraper_{timestamp}.log"
-
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 
@@ -48,7 +50,7 @@ TARGET_FIELDS = [
     # Genel
     "Başlık",
     "Marka",
-    "Ürün Modeli",
+    # "Ürün Modeli",
     "Kullanım Amacı",
     "Renk",
     "Cihaz Ağırlığı",
@@ -57,43 +59,145 @@ TARGET_FIELDS = [
     "İşlemci",
     "İşlemci Nesli",
     "İşlemci Çekirdek Sayısı",
-    "İşlemci Cache",
-    "Temel İşlemci Hızı",
+    # "İşlemci Cache",
     "Maksimum İşlemci Hızı",
-    # Bellek
+    # Bellek / RAM
     "Ram (Sistem Belleği)",
     "Ram Tipi",
-    "Bellek Hızı",
+    # "Bellek Hızı",
+    # Grafik / GPU
+    "Ekran Kartı",
+    "Ekran Kartı Tipi",
+    # "Ekran Kartı İşlemcisi",
+    "Ekran Kartı Hafızası",
+    "Ekran Kartı Bellek Tipi",
     # Depolama
     "SSD Kapasitesi",
     "Harddisk Kapasitesi",
     # Ekran
     "Ekran Boyutu",
-    "Ekran Panel Tipi",
     "Max Ekran Çözünürlüğü",
     "Ekran Özelliği",
     "Ekran Yenileme Hızı",
-    # Grafik
-    "Ekran Kartı Tipi",
-    "Ekran Kartı",
-    "Ekran Kartı İşlemcisi",
-    "Ekran Kartı Hafızası",
-    "Ekran Kartı Bellek Tipi",
+    "Ekran Panel Tipi",
     # Yazılım
     "İşletim Sistemi",
 ]
 
 
+def _wait_dom_interactive(driver, timeout: int = 10) -> None:
+    """Wait until the DOM is at least interactive (fast) so selectors become available."""
+    WebDriverWait(driver, timeout).until(
+        lambda d: d.execute_script("return document.readyState")
+        in ("interactive", "complete")
+    )
+
+
+def wait_for_tech_specs_with_scroll(driver, timeout: int = 20):
+    """Hepsiburada sometimes lazy-loads #techSpecs until user scrolls.
+
+    Some product pages contain long brochure/marketing blocks. Large scroll jumps may
+    skip the lazy-load trigger, so we:
+      1) Try to jump via in-page links (if present)
+      2) If #techSpecs exists, scroll it into view directly
+      3) Otherwise scroll in smaller steps until it appears
+
+    No time.sleep is used.
+    """
+    _wait_dom_interactive(driver, timeout=min(10, timeout))
+
+    wait = WebDriverWait(driver, timeout, poll_frequency=0.35)
+
+    def _try_jump_to_specs(d) -> None:
+        """Some pages have a shortcut/tab that jumps to tech specs."""
+        candidates = []
+        # Common patterns: anchor to #techSpecs or a tab/button text
+        candidates.extend(d.find_elements(By.CSS_SELECTOR, "a[href='#techSpecs']"))
+        candidates.extend(
+            d.find_elements(
+                By.XPATH,
+                "//a[contains(., 'Teknik') and contains(., 'Özellik')] | "
+                "//button[contains(., 'Teknik') and contains(., 'Özellik')]",
+            )
+        )
+        if not candidates:
+            return
+
+        el = candidates[0]
+        try:
+            d.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
+            try:
+                el.click()
+            except Exception:
+                d.execute_script("arguments[0].click();", el)
+        except Exception:
+            return
+
+    # Small initial scroll: triggers many lazy-load observers without big jumps
+    driver.execute_script("window.scrollTo(0, 250);")
+
+    scroll_step = 350
+
+    def _cond(d):
+        # If techSpecs already exists, scroll directly to it and return
+        try:
+            el = d.find_element(By.ID, "techSpecs")
+            d.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
+            return el
+        except NoSuchElementException:
+            pass
+
+        # Try to use in-page navigation shortcuts (if any)
+        _try_jump_to_specs(d)
+
+        # Check again after possible jump
+        try:
+            el = d.find_element(By.ID, "techSpecs")
+            d.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
+            return el
+        except NoSuchElementException:
+            pass
+
+        # Otherwise, scroll gradually to avoid skipping lazy-load triggers
+        try:
+            max_h = d.execute_script("return document.body.scrollHeight")
+            y = d.execute_script("return window.pageYOffset")
+        except Exception:
+            max_h = None
+            y = None
+
+        # If we can read offsets, stop near bottom; else just scrollBy
+        if max_h is not None and y is not None:
+            if y >= max_h - 350:
+                # near bottom; one last attempt will be made on next poll
+                return False
+            d.execute_script(
+                "window.scrollTo(0, arguments[0]);",
+                min(y + scroll_step, max_h - 200),
+            )
+        else:
+            d.execute_script("window.scrollBy(0, arguments[0]);", scroll_step)
+
+        return False
+
+    return wait.until(_cond)
+
+
 def get_product_links(base_url: str, total_pages: int = 1, driver=None) -> pd.DataFrame:
-    """
-    Hepsiburada'dan ürün başlıklarını, fiyatlarını ve linklerini çeker.
-    """
+    """Hepsiburada'dan ürün başlıklarını, fiyatlarını ve linklerini çeker."""
     all_results = []
 
     for page in range(1, total_pages + 1):
         logger.info(f"Processing page {page}...")
         driver.get(base_url + str(page))
-        time.sleep(3)
+
+        wait = WebDriverWait(driver, 15)
+        # Wait until at least one price element is present on the listing
+        wait.until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "[data-test-id^='final-price']")
+            )
+        )
 
         items = driver.find_elements(By.TAG_NAME, "li")
 
@@ -112,26 +216,28 @@ def get_product_links(base_url: str, total_pages: int = 1, driver=None) -> pd.Da
             except Exception:
                 continue
 
-    df = pd.DataFrame(all_results)
-    return df
+    return pd.DataFrame(all_results)
 
 
 def get_product_details(link: str, driver) -> dict:
-    """
-    Tek bir ürünün detay özelliklerini çeker.
-    """
+    """Tek bir ürünün detay özelliklerini çeker."""
     features = {field: None for field in TARGET_FIELDS}
 
     try:
         driver.get(link)
-        time.sleep(3)
+        _wait_dom_interactive(driver, timeout=10)
+        wait = WebDriverWait(driver, 15)
 
         try:
-            title_element = driver.find_element(
-                By.CSS_SELECTOR, '[data-test-id="title"]'
+            title_element = wait.until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, '[data-test-id="title"]')
+                )
             )
-            brand_element = driver.find_element(
-                By.CSS_SELECTOR, '[data-test-id="brand"]'
+            brand_element = wait.until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, '[data-test-id="brand"]')
+                )
             )
 
             features["Başlık"] = title_element.text.strip()
@@ -141,7 +247,7 @@ def get_product_details(link: str, driver) -> dict:
             logger.warning(f"Başlık veya marka bilgisi alınamadı: {link} - {e}")
 
         try:
-            tech_specs = driver.find_element(By.ID, "techSpecs")
+            tech_specs = wait_for_tech_specs_with_scroll(driver, timeout=20)
             rows = tech_specs.find_elements(By.CLASS_NAME, "jkj4C4LML4qv2Iq8GkL3")
 
             for row in rows:
@@ -173,7 +279,9 @@ def get_product_details(link: str, driver) -> dict:
                     continue
 
         except Exception as e:
-            logger.warning(f"Teknik özellikler tablosu bulunamadı: {link} - {e}")
+            logger.warning(
+                f"Teknik özellikler tablosu bulunamadı (lazy-load olabilir): {link} - {e}"
+            )
 
     except Exception as e:
         logger.error(f"Ürün detayları alınamadı: {e}")
@@ -183,9 +291,7 @@ def get_product_details(link: str, driver) -> dict:
 
 
 def scrape_all_details(links_df: pd.DataFrame, driver) -> pd.DataFrame:
-    """
-    Ürün linkleri DataFrame'inden tüm ürün detaylarını döndüren DataFrame'i oluşturur.
-    """
+    """Ürün linkleri DataFrame'inden tüm ürün detaylarını döndüren DataFrame'i oluşturur."""
     results = []
 
     for i, (link, price) in enumerate(
@@ -200,8 +306,7 @@ def scrape_all_details(links_df: pd.DataFrame, driver) -> pd.DataFrame:
         details["Çekilme Zamanı"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         results.append(details)
 
-    df_detailed = pd.DataFrame(results)
-    return df_detailed
+    return pd.DataFrame(results)
 
 
 def scrape_hepsiburada(base_url: str, total_pages: int):
