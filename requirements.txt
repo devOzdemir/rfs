@@ -7,3 +7,4 @@ jupyterlab
 selenium
 webdriver-manager
 openpyxl
+xgboost

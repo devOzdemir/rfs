@@ -14,7 +14,7 @@ from selenium.common.exceptions import (
 )
 
 LINK_DIR = "../../data/link"
-RAW_DIR = "../../data/raw"
+SCRAPPED_DIR = "../../data/scrapped"
 PROCESSED_DIR = "../../data/processed"
 
 # Use an absolute log folder so logs don't end up in an unexpected CWD
@@ -286,7 +286,7 @@ def scrape_all_details_trendyol(links_df: pd.DataFrame, driver) -> pd.DataFrame:
 
 def scrape_trendyol(base_url: str, total_pages: int):
     os.makedirs(LINK_DIR, exist_ok=True)
-    os.makedirs(RAW_DIR, exist_ok=True)
+    os.makedirs(SCRAPPED_DIR, exist_ok=True)
     os.makedirs(PROCESSED_DIR, exist_ok=True)
 
     driver = webdriver.Chrome()
@@ -300,11 +300,11 @@ def scrape_trendyol(base_url: str, total_pages: int):
         logger.info(f"Linkler kaydedildi: {link_path}")
 
         details_df = scrape_all_details_trendyol(links_df, driver)
-        raw_path = os.path.join(
-            RAW_DIR, f"TY_Details_{datetime.now().strftime('%Y%m%d%H%M')}.csv"
+        scrapped_path = os.path.join(
+            SCRAPPED_DIR, f"TY_Details_{datetime.now().strftime('%Y%m%d%H%M')}.csv"
         )
-        details_df.to_csv(raw_path, index=False)
-        logger.info(f"Detaylar kaydedildi: {raw_path}")
+        details_df.to_csv(scrapped_path, index=False)
+        logger.info(f"Detaylar kaydedildi: {scrapped_path}")
 
     finally:
         driver.quit()
